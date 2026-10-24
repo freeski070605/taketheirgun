@@ -9,8 +9,10 @@ local currentGunId
 local weaponLabel
 local ammoLabel
 local inspectPanel
+local debugPanel
 local feedLabel
 local pickupLabel
+local debugSnapshot
 
 local function label(parent, name, size, position, text, textSize)
     local element = Instance.new("TextLabel")
@@ -39,6 +41,40 @@ local function refresh()
     end
 end
 
+local function refreshDebug()
+    if not debugPanel or not debugPanel.Visible then return end
+
+    local rows = {}
+    for _, state in pairs(states) do
+        table.insert(rows, state)
+    end
+    table.sort(rows, function(a, b)
+        if a.TotalKills ~= b.TotalKills then return a.TotalKills > b.TotalKills end
+        return a.GunId < b.GunId
+    end)
+
+    local lines = { "GUN REGISTRY DEBUG  [G] CLOSE", "" }
+    for index, state in ipairs(rows) do
+        if index > 14 then
+            table.insert(lines, string.format("... +%d more", #rows - 14))
+            break
+        end
+        local shortId = state.GunId:gsub("G%-", ""):sub(1, 8)
+        local holder = state.HolderUserId and ("#" .. tostring(state.HolderUserId)) or "-"
+        table.insert(lines, string.format(
+            "%s  %-7s  K:%d  O:%d  T:%d  %s  H:%s",
+            shortId,
+            tostring(state.WeaponType):sub(1, 7),
+            state.TotalKills or 0,
+            state.OwnerCount or 0,
+            state.TimesStolen or 0,
+            state.Presentation or "?",
+            holder
+        ))
+    end
+    debugPanel.Text = table.concat(lines, "\n")
+end
+
 function HUD.Init()
     local gui = Instance.new("ScreenGui")
     gui.Name = "TakeTheirGunHUD"
@@ -53,17 +89,27 @@ function HUD.Init()
     feedLabel.Visible = false
     pickupLabel = label(gui, "Pickup", UDim2.fromOffset(360, 52), UDim2.new(0.5, -180, 1, -115), "", 16)
     pickupLabel.Visible = false
+
     inspectPanel = label(gui, "Inspect", UDim2.fromOffset(380, 300), UDim2.new(0.5, -190, 0.5, -150), "", 17)
     inspectPanel.Visible = false
     inspectPanel.TextXAlignment = Enum.TextXAlignment.Left
 
+    debugPanel = label(gui, "Debug", UDim2.fromOffset(650, 410), UDim2.fromOffset(18, 78), "", 14)
+    debugPanel.Visible = false
+    debugPanel.TextXAlignment = Enum.TextXAlignment.Left
+    debugPanel.TextYAlignment = Enum.TextYAlignment.Top
+
     local remotes = ReplicatedStorage:WaitForChild("Remotes")
+    debugSnapshot = remotes:WaitForChild("DebugWeaponSnapshot")
+
     remotes.WeaponStateChanged.OnClientEvent:Connect(function(state)
         if type(state) ~= "table" or type(state.GunId) ~= "string" then return end
         states[state.GunId] = state
         refresh()
+        refreshDebug()
         if inspectPanel.Visible then HUD.SetInspect(true) end
     end)
+
     remotes.KillFeedEvent.OnClientEvent:Connect(function(message)
         feedLabel.Text = tostring(message)
         feedLabel.Visible = true
@@ -100,6 +146,23 @@ end
 
 function HUD.ToggleInspect()
     HUD.SetInspect(not inspectPanel.Visible)
+end
+
+function HUD.ToggleDebug()
+    debugPanel.Visible = not debugPanel.Visible
+    if not debugPanel.Visible then return end
+
+    local ok, snapshot = pcall(function()
+        return debugSnapshot:InvokeServer()
+    end)
+    if ok and type(snapshot) == "table" then
+        for _, state in ipairs(snapshot) do
+            if type(state) == "table" and type(state.GunId) == "string" then
+                states[state.GunId] = state
+            end
+        end
+    end
+    refreshDebug()
 end
 
 return HUD
