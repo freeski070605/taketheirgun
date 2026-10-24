@@ -83,13 +83,17 @@ function DropService.Claim(player, part)
         DropService.Create(previous, root.Position + root.CFrame.RightVector * 3)
     end
 
-    local eventType, previousOwner = OwnershipService.Transfer(record, player)
+    -- Equip first, then transfer ownership. If an unexpected equip failure happens,
+    -- the gun returns to the floor without falsifying its ownership history.
     local equipped = WeaponService.Equip(player, record)
     if not equipped then
         warn("Validated pickup could not be equipped for", player.UserId, gunId)
         DropService.Create(record, root.Position)
         return false
     end
+
+    local eventType, previousOwner = OwnershipService.Transfer(record, player)
+    WeaponService.Update(record)
 
     if eventType then
         local name = PlayerDataService.NameFor(player.UserId)
