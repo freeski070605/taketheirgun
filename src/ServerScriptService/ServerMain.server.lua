@@ -63,7 +63,11 @@ for _, player in ipairs(Players:GetPlayers()) do onPlayer(player) end
 Players.PlayerRemoving:Connect(function(player)
     local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
     local position = root and root.Position or (player.Character and player.Character:GetPivot().Position)
-    if position then DropService.DropPlayerWeapon(player, position) end
+    if position then
+        DropService.DropPlayerWeapon(player, position)
+    else
+        WeaponService.TakeFromPlayer(player)
+    end
     PlayerDataService.Forget(player)
 end)
 
