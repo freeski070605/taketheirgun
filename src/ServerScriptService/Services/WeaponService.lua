@@ -196,10 +196,7 @@ function WeaponService.Create(player, weaponType, persistent)
     }
     OwnershipService.Created(record, player)
     records[record.GunId] = record
-    if isPersistent then
-        WeaponService.MarkDirty(record)
-        WeaponService.SaveNow(record)
-    end
+    if isPersistent then WeaponService.MarkDirty(record) end
     return record
 end
 
@@ -308,15 +305,25 @@ function WeaponService.Stash(record)
 end
 
 function WeaponService.StashOwnedBy(userId)
+    local persistentToStash = {}
+    local issuesToDiscard = {}
+
     for _, record in pairs(records) do
-        if record.CurrentOwnerUserId == userId then
-            if record.Persistent then
-                WeaponService.Stash(record)
-                WeaponService.SaveNow(record)
+        if record.CurrentOwnerUserId == userId and not record.Claiming then
+            if record.Persistent and record.Instance then
+                table.insert(persistentToStash, record)
             elseif record.IssueWeapon then
-                WeaponService.Discard(record)
+                table.insert(issuesToDiscard, record)
             end
         end
+    end
+
+    for _, record in ipairs(persistentToStash) do
+        WeaponService.Stash(record)
+        WeaponService.SaveNow(record)
+    end
+    for _, record in ipairs(issuesToDiscard) do
+        WeaponService.Discard(record)
     end
 end
 
