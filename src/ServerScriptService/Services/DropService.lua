@@ -34,6 +34,12 @@ local function scheduleExpiry(record, part)
     task.delay(Constants.DropLifetime, expire)
 end
 
+local function rollbackPendingIndex(player, gunId, ownershipWillChange)
+    if not ownershipWillChange then return end
+    PlayerDataService.RemoveOwnedGun(player.UserId, gunId)
+    PlayerDataService.SaveUserId(player.UserId, true)
+end
+
 function DropService.Create(record, position)
     if not record or record.HolderUserId or record.Instance then return nil end
 
@@ -95,17 +101,27 @@ function DropService.Claim(player, part)
         if PlayerDataService.IsPersistenceAvailable(player.UserId) then
             local saved = PlayerDataService.SaveUserId(player.UserId, true)
             if not saved then
-                PlayerDataService.RemoveOwnedGun(player.UserId, gunId)
+                rollbackPendingIndex(player, gunId, ownershipWillChange)
                 record.Claiming = nil
                 return false
             end
+        end
+
+        character = player.Character
+        humanoid = character and character:FindFirstChildOfClass("Humanoid")
+        root = character and character:FindFirstChild("HumanoidRootPart")
+        backpack = player:FindFirstChildOfClass("Backpack")
+        if not player.Parent or not humanoid or humanoid.Health <= 0 or not root or not backpack
+            or part.Parent ~= folder or record.Instance ~= part or drops[gunId] ~= part
+            or (root.Position - part.Position).Magnitude > Constants.PickupDistance then
+            rollbackPendingIndex(player, gunId, ownershipWillChange)
+            record.Claiming = nil
+            return false
         end
     else
         record.Claiming = true
     end
 
-    -- From here to equip there are no yields. Claiming also prevents another
-    -- prompt callback from racing the persistent profile write above.
     drops[gunId] = nil
     record.Instance = nil
     part:Destroy()
@@ -118,8 +134,7 @@ function DropService.Claim(player, part)
     local equipped = WeaponService.Equip(player, record)
     if not equipped then
         if record.Persistent and ownershipWillChange then
-            PlayerDataService.RemoveOwnedGun(player.UserId, gunId)
-            PlayerDataService.SaveUserId(player.UserId, true)
+            rollbackPendingIndex(player, gunId, ownershipWillChange)
         end
         record.Claiming = nil
         DropService.Create(record, root.Position)
