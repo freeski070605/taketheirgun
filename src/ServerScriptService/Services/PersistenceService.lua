@@ -1,12 +1,16 @@
 local DataStoreService = game:GetService("DataStoreService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 local Constants = require(ReplicatedStorage.Shared.Constants)
 
 local PersistenceService = {}
 local playerStore = DataStoreService:GetDataStore(Constants.PlayerStoreName)
 local weaponStore = DataStoreService:GetDataStore(Constants.WeaponStoreName)
+local blockedInStudio = false
 
 local function retry(label, callback)
+    if blockedInStudio then return false, nil end
+
     local lastError
     for attempt = 1, Constants.DataStoreRetries do
         local ok, result = pcall(callback)
@@ -15,6 +19,11 @@ local function retry(label, callback)
         if attempt < Constants.DataStoreRetries then
             task.wait(math.min(2 ^ (attempt - 1), 4) + math.random() * 0.25)
         end
+    end
+
+    if RunService:IsStudio() then
+        blockedInStudio = true
+        warn("[TTG Persistence] DataStore access is unavailable in this Studio session. Publish the experience and enable Studio Access to API Services before persistence testing.")
     end
     warn("[TTG Persistence]", label, "failed:", lastError)
     return false, nil
@@ -26,6 +35,10 @@ end
 
 local function weaponKey(gunId)
     return "W_" .. gunId
+end
+
+function PersistenceService.IsBlocked()
+    return blockedInStudio
 end
 
 function PersistenceService.LoadPlayer(userId)
