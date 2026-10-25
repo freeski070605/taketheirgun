@@ -4,4 +4,5 @@ return {
     SpawnProtectionSeconds = 1.5,
     MaxHistory = 100,
     DropLifetime = 600,
+    DebugEnabled = true,
 }

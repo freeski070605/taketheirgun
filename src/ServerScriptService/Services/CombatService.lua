@@ -34,24 +34,32 @@ function CombatService.Fire(player, clientOrigin, clientDirection)
         if component ~= component or math.abs(component) == math.huge then return end
     end
     if clientDirection.Magnitude < 0.95 or clientDirection.Magnitude > 1.05 then return end
+
     local character = player.Character
     local head = character and character:FindFirstChild("Head")
     if not head then return end
     if (clientOrigin - head.Position).Magnitude > Constants.MaxAimOriginOffset then return end
+
     local record, definition = WeaponService.TryConsumeShot(player)
     if not record then return end
 
     local rayOrigin = head.Position
     local aimPoint = clientOrigin + clientDirection.Unit * definition.Range
-    local baseDirection = (aimPoint - rayOrigin).Unit
+    local offset = aimPoint - rayOrigin
+    if offset.Magnitude < 0.01 then return end
+    local baseDirection = offset.Unit
+
     local params = RaycastParams.new()
     params.FilterType = Enum.RaycastFilterType.Exclude
     params.FilterDescendantsInstances = { character, workspace.DroppedWeapons }
     params.IgnoreWater = true
 
+    local endpoints = {}
     for _ = 1, definition.PelletCount do
         local direction = spreadDirection(baseDirection, definition.Spread)
         local hit = workspace:Raycast(rayOrigin, direction * definition.Range, params)
+        table.insert(endpoints, hit and hit.Position or (rayOrigin + direction * definition.Range))
+
         if hit then
             local model = hit.Instance:FindFirstAncestorOfClass("Model")
             local humanoid = model and model:FindFirstChildOfClass("Humanoid")
@@ -73,7 +81,8 @@ function CombatService.Fire(player, clientOrigin, clientDirection)
             end
         end
     end
-    remotes.ShotFired:FireAllClients(player.UserId, rayOrigin, baseDirection, definition.Range)
+
+    remotes.ShotFired:FireAllClients(player.UserId, rayOrigin, endpoints)
 end
 
 return CombatService

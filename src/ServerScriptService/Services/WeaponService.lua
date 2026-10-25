@@ -8,12 +8,22 @@ local records = {}
 local equipped = {}
 local remotes
 
+local function presentationFor(record)
+    local instance = record.Instance
+    if not instance then return "NONE" end
+    if instance:IsA("Tool") then return "HELD" end
+    if instance:IsA("BasePart") then return "DROPPED" end
+    return "OTHER"
+end
+
 local function publicState(record)
     return {
         GunId = record.GunId,
         WeaponType = record.WeaponType,
         OriginalOwnerUserId = record.OriginalOwnerUserId,
         CurrentOwnerUserId = record.CurrentOwnerUserId,
+        HolderUserId = record.HolderUserId,
+        Presentation = presentationFor(record),
         TotalKills = record.TotalKills,
         Headshots = record.Headshots,
         TimesStolen = record.TimesStolen,
@@ -37,6 +47,18 @@ end
 
 function WeaponService.GetEquipped(player)
     return records[equipped[player.UserId]]
+end
+
+function WeaponService.GetDebugSnapshot()
+    local snapshot = {}
+    for _, record in pairs(records) do
+        table.insert(snapshot, publicState(record))
+    end
+    table.sort(snapshot, function(a, b)
+        if a.TotalKills ~= b.TotalKills then return a.TotalKills > b.TotalKills end
+        return a.GunId < b.GunId
+    end)
+    return snapshot
 end
 
 function WeaponService.IsEquipped(player, record)

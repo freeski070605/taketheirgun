@@ -17,21 +17,26 @@ local function localFlash(tool)
     light.Range = 8
     light.Color = Color3.fromRGB(255, 216, 112)
     light.Parent = handle
-    task.delay(0.06, function() light:Destroy() end)
+    task.delay(0.06, function()
+        if light.Parent then light:Destroy() end
+    end)
 end
 
 function WeaponController.Init(hud, cameraController)
     local remotes = ReplicatedStorage:WaitForChild("Remotes")
+
     local function findTool(character)
         local tool = character and character:FindFirstChildOfClass("Tool")
         currentTool = tool and tool:GetAttribute("GunId") and tool or nil
         hud.SetGun(currentTool and currentTool:GetAttribute("GunId") or nil)
     end
+
     local function bindCharacter(character)
         findTool(character)
         character.ChildAdded:Connect(function() task.defer(findTool, character) end)
         character.ChildRemoved:Connect(function() task.defer(findTool, character) end)
     end
+
     player.CharacterAdded:Connect(bindCharacter)
     if player.Character then bindCharacter(player.Character) end
 
@@ -47,6 +52,7 @@ function WeaponController.Init(hud, cameraController)
 
     UserInputService.InputBegan:Connect(function(input, processed)
         if processed then return end
+
         if input.UserInputType == Enum.UserInputType.MouseButton1 then
             held = true
             if fireLoopRunning then return end
@@ -67,8 +73,11 @@ function WeaponController.Init(hud, cameraController)
             remotes.ReloadWeapon:FireServer()
         elseif input.KeyCode == Enum.KeyCode.F then
             hud.ToggleInspect()
+        elseif input.KeyCode == Enum.KeyCode.G then
+            hud.ToggleDebug()
         end
     end)
+
     UserInputService.InputEnded:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 then held = false end
     end)

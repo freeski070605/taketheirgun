@@ -1,6 +1,7 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Services = script.Parent.Services
+local Constants = require(ReplicatedStorage.Shared.Constants)
 local WeaponService = require(Services.WeaponService)
 local DropService = require(Services.DropService)
 local CombatService = require(Services.CombatService)
@@ -19,6 +20,13 @@ for _, name in ipairs({ "FireWeapon", "ReloadWeapon", "RequestPickup", "WeaponSt
     local remote = remoteFolder:FindFirstChild(name) or Instance.new("RemoteEvent")
     remote.Name = name
     remote.Parent = remoteFolder
+end
+
+local debugSnapshot = remoteFolder:FindFirstChild("DebugWeaponSnapshot")
+if not debugSnapshot then
+    debugSnapshot = Instance.new("RemoteFunction")
+    debugSnapshot.Name = "DebugWeaponSnapshot"
+    debugSnapshot.Parent = remoteFolder
 end
 
 WeaponService.Init(remoteFolder)
@@ -55,7 +63,11 @@ for _, player in ipairs(Players:GetPlayers()) do onPlayer(player) end
 Players.PlayerRemoving:Connect(function(player)
     local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
     local position = root and root.Position or (player.Character and player.Character:GetPivot().Position)
-    if position then DropService.DropPlayerWeapon(player, position) end
+    if position then
+        DropService.DropPlayerWeapon(player, position)
+    else
+        WeaponService.TakeFromPlayer(player)
+    end
     PlayerDataService.Forget(player)
 end)
 
@@ -64,3 +76,8 @@ remoteFolder.ReloadWeapon.OnServerEvent:Connect(WeaponService.StartReload)
 remoteFolder.RequestPickup.OnServerEvent:Connect(function(player, drop)
     DropService.Claim(player, drop)
 end)
+
+debugSnapshot.OnServerInvoke = function(_player)
+    if not Constants.DebugEnabled then return {} end
+    return WeaponService.GetDebugSnapshot()
+end

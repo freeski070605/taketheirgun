@@ -1,4 +1,3 @@
-local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Definitions = require(ReplicatedStorage.Shared.WeaponDefinitions)
 local Constants = require(ReplicatedStorage.Shared.Constants)
@@ -18,6 +17,7 @@ end
 
 function DropService.Create(record, position)
     if not record or record.HolderUserId or record.Instance then return nil end
+
     local definition = Definitions[record.WeaponType]
     local part = Instance.new("Part")
     part.Name = "Dropped " .. definition.DisplayName
@@ -26,7 +26,9 @@ function DropService.Create(record, position)
     part.Material = Enum.Material.Neon
     part.Anchored = true
     part.CanCollide = false
+    part.CanTouch = false
     part.CFrame = CFrame.new(position + Vector3.new(0, 1.3, 0))
+
     local prompt = Instance.new("ProximityPrompt")
     prompt.ActionText = "TAKE"
     prompt.ObjectText = string.format("%s | %d KILLS | %d THEFTS", definition.DisplayName, record.TotalKills, record.TimesStolen)
@@ -35,37 +37,63 @@ function DropService.Create(record, position)
     prompt.MaxActivationDistance = Constants.PickupDistance
     prompt.RequiresLineOfSight = false
     prompt.Parent = part
+
     part.Parent = folder
     record.Instance = part
     drops[record.GunId] = part
     WeaponService.Update(record)
+
     prompt.Triggered:Connect(function(player)
         DropService.Claim(player, part)
     end)
+
+    task.delay(Constants.DropLifetime, function()
+        if drops[record.GunId] ~= part or record.Instance ~= part or part.Parent ~= folder then return end
+        drops[record.GunId] = nil
+        record.Instance = nil
+        part:Destroy()
+        WeaponService.Update(record)
+    end)
+
     return part
 end
 
 function DropService.Claim(player, part)
     if typeof(part) ~= "Instance" or not part:IsA("BasePart") or part.Parent ~= folder then return false end
+
     local gunId = part:GetAttribute("GunId")
     local record = WeaponService.Get(gunId)
     if not record or drops[gunId] ~= part or record.Instance ~= part or record.HolderUserId then return false end
+
     local character = player.Character
     local humanoid = character and character:FindFirstChildOfClass("Humanoid")
     local root = character and character:FindFirstChild("HumanoidRootPart")
-    if not humanoid or humanoid.Health <= 0 or not root then return false end
+    local backpack = player:FindFirstChildOfClass("Backpack")
+    if not humanoid or humanoid.Health <= 0 or not root or not backpack then return false end
     if (root.Position - part.Position).Magnitude > Constants.PickupDistance then return false end
 
-    -- There is no yield between removing the drop and assigning the gun.
+    -- No yields occur between claim validation and removing the drop, so two claims
+    -- cannot both consume the same server-owned GunId.
     drops[gunId] = nil
     record.Instance = nil
     part:Destroy()
 
     local previous = WeaponService.TakeFromPlayer(player)
-    if previous then DropService.Create(previous, root.Position + root.CFrame.RightVector * 3) end
-    local eventType, previousOwner = OwnershipService.Transfer(record, player)
+    if previous then
+        DropService.Create(previous, root.Position + root.CFrame.RightVector * 3)
+    end
+
+    -- Equip first, then transfer ownership. If an unexpected equip failure happens,
+    -- the gun returns to the floor without falsifying its ownership history.
     local equipped = WeaponService.Equip(player, record)
-    assert(equipped, "Validated pickup could not be equipped")
+    if not equipped then
+        warn("Validated pickup could not be equipped for", player.UserId, gunId)
+        DropService.Create(record, root.Position)
+        return false
+    end
+
+    local eventType, previousOwner = OwnershipService.Transfer(record, player)
+    WeaponService.Update(record)
 
     if eventType then
         local name = PlayerDataService.NameFor(player.UserId)
@@ -78,6 +106,7 @@ function DropService.Claim(player, part)
         end
         remotes.KillFeedEvent:FireAllClients(message)
     end
+
     return true
 end
 
