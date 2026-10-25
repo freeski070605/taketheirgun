@@ -75,6 +75,8 @@ function WeaponController.Init(hud, cameraController)
             hud.ToggleInspect()
         elseif input.KeyCode == Enum.KeyCode.G then
             hud.ToggleDebug()
+        elseif input.KeyCode == Enum.KeyCode.I then
+            hud.ToggleInventory()
         end
     end)
 
