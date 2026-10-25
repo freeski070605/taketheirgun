@@ -78,6 +78,10 @@ function PlayerDataService.IsLoaded(player)
     return loaded[player.UserId] == true
 end
 
+function PlayerDataService.IsPersistenceAvailable(userId)
+    return persistenceAvailable[userId] == true
+end
+
 function PlayerDataService.WaitLoaded(player, timeoutSeconds)
     local started = os.clock()
     while player.Parent and not loaded[player.UserId] do
@@ -90,6 +94,12 @@ end
 function PlayerDataService.Get(playerOrUserId)
     local userId = typeof(playerOrUserId) == "Instance" and playerOrUserId.UserId or playerOrUserId
     return profiles[userId]
+end
+
+function PlayerDataService.CanReceiveGun(userId, gunId)
+    local profile = profiles[userId]
+    if not profile then return false end
+    return contains(profile, gunId) or #profile.OwnedGunIds < Constants.MaxOwnedWeapons
 end
 
 function PlayerDataService.AddOwnedGun(userId, gunId)
@@ -141,27 +151,6 @@ function PlayerDataService.SaveUserId(userId, force)
     local ok = PersistenceService.SavePlayer(userId, serializable(profile))
     if ok then dirty[userId] = false end
     return ok
-end
-
-function PlayerDataService.TransferGun(previousUserId, newUserId, gunId)
-    if previousUserId == newUserId then return true end
-
-    PlayerDataService.AddOwnedGun(newUserId, gunId)
-    PlayerDataService.SaveUserId(newUserId, true)
-
-    if profiles[previousUserId] then
-        PlayerDataService.RemoveOwnedGun(previousUserId, gunId)
-        PlayerDataService.SaveUserId(previousUserId, true)
-    elseif previousUserId then
-        PersistenceService.UpdatePlayer(previousUserId, function(current)
-            local profile = normalize(current)
-            local index = table.find(profile.OwnedGunIds, gunId)
-            if index then table.remove(profile.OwnedGunIds, index) end
-            if profile.SelectedGunId == gunId then profile.SelectedGunId = profile.OwnedGunIds[1] end
-            return serializable(profile)
-        end)
-    end
-    return true
 end
 
 function PlayerDataService.SaveDirty()
