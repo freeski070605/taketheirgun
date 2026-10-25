@@ -22,52 +22,91 @@ for _, name in ipairs({ "FireWeapon", "ReloadWeapon", "RequestPickup", "WeaponSt
     remote.Parent = remoteFolder
 end
 
-local debugSnapshot = remoteFolder:FindFirstChild("DebugWeaponSnapshot")
-if not debugSnapshot then
-    debugSnapshot = Instance.new("RemoteFunction")
-    debugSnapshot.Name = "DebugWeaponSnapshot"
-    debugSnapshot.Parent = remoteFolder
+local function ensureRemoteFunction(name)
+    local remote = remoteFolder:FindFirstChild(name)
+    if not remote then
+        remote = Instance.new("RemoteFunction")
+        remote.Name = name
+        remote.Parent = remoteFolder
+    end
+    return remote
 end
+
+local debugSnapshot = ensureRemoteFunction("DebugWeaponSnapshot")
+local inventorySnapshot = ensureRemoteFunction("InventorySnapshot")
 
 WeaponService.Init(remoteFolder)
 DropService.Init(dropFolder, remoteFolder)
 CombatService.Init(remoteFolder)
 
-local starterTypes = { "Pistol", "SMG", "AssaultRifle", "Shotgun" }
-local starterIndex = 0
+local founderTypes = { "Pistol", "SMG", "AssaultRifle", "Shotgun" }
+local founderIndex = 0
+
+local function giveSpawnWeapon(player)
+    if WeaponService.GetEquipped(player) then return end
+    local profile = PlayerDataService.Get(player)
+    if not profile then return end
+
+    local persistent = WeaponService.FindStoredOwned(player.UserId, profile.SelectedGunId)
+    if persistent and WeaponService.Equip(player, persistent) then return end
+
+    local issue = WeaponService.CreateIssue(player, "Pistol")
+    WeaponService.Equip(player, issue)
+end
 
 local function onCharacter(player, character)
-    CombatService.MarkSpawn(player)
-    local humanoid = character:WaitForChild("Humanoid")
-    humanoid.Died:Connect(function()
-        local root = character:FindFirstChild("HumanoidRootPart")
-        DropService.DropPlayerWeapon(player, root and root.Position or character:GetPivot().Position)
-    end)
-    task.defer(function()
-        if player.Character ~= character or humanoid.Health <= 0 or WeaponService.GetEquipped(player) then return end
-        starterIndex += 1
-        local record = WeaponService.Create(player, starterTypes[((starterIndex - 1) % #starterTypes) + 1])
-        WeaponService.Equip(player, record)
+    task.spawn(function()
+        if not PlayerDataService.WaitLoaded(player, 15) then return end
+        if player.Character ~= character then return end
+
+        CombatService.MarkSpawn(player)
+        local humanoid = character:WaitForChild("Humanoid")
+        humanoid.Died:Connect(function()
+            local root = character:FindFirstChild("HumanoidRootPart")
+            DropService.DropPlayerWeapon(player, root and root.Position or character:GetPivot().Position)
+        end)
+
+        task.defer(function()
+            if player.Character ~= character or humanoid.Health <= 0 then return end
+            giveSpawnWeapon(player)
+        end)
     end)
 end
 
 local function onPlayer(player)
     PlayerDataService.Remember(player)
-    player.CharacterAdded:Connect(function(character) onCharacter(player, character) end)
+    player.CharacterAdded:Connect(function(character)
+        onCharacter(player, character)
+    end)
+
+    local profile = PlayerDataService.Load(player)
+    local validGunIds, loadComplete = WeaponService.LoadOwnedForPlayer(player, profile.OwnedGunIds)
+    if loadComplete and #validGunIds ~= #profile.OwnedGunIds then
+        PlayerDataService.ReplaceOwnedGunIds(player.UserId, validGunIds)
+        PlayerDataService.SaveUserId(player.UserId, true)
+        profile = PlayerDataService.Get(player)
+    end
+
+    if not profile.HasReceivedFounderGun then
+        founderIndex += 1
+        local weaponType = founderTypes[((founderIndex - 1) % #founderTypes) + 1]
+        local founder = WeaponService.Create(player, weaponType, true)
+        PlayerDataService.AddOwnedGun(player.UserId, founder.GunId)
+        PlayerDataService.MarkFounderReceived(player.UserId, founder.GunId)
+        PlayerDataService.SaveUserId(player.UserId, true)
+        WeaponService.SaveNow(founder)
+    end
+
     if player.Character then onCharacter(player, player.Character) end
 end
 
 Players.PlayerAdded:Connect(onPlayer)
-for _, player in ipairs(Players:GetPlayers()) do onPlayer(player) end
+for _, player in ipairs(Players:GetPlayers()) do
+    task.spawn(onPlayer, player)
+end
 
 Players.PlayerRemoving:Connect(function(player)
-    local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-    local position = root and root.Position or (player.Character and player.Character:GetPivot().Position)
-    if position then
-        DropService.DropPlayerWeapon(player, position)
-    else
-        WeaponService.TakeFromPlayer(player)
-    end
+    WeaponService.StashOwnedBy(player.UserId)
     PlayerDataService.Forget(player)
 end)
 
@@ -81,3 +120,22 @@ debugSnapshot.OnServerInvoke = function(_player)
     if not Constants.DebugEnabled then return {} end
     return WeaponService.GetDebugSnapshot()
 end
+
+inventorySnapshot.OnServerInvoke = function(player)
+    return WeaponService.GetInventorySnapshot(player)
+end
+
+task.spawn(function()
+    while task.wait(Constants.AutosaveSeconds) do
+        PlayerDataService.SaveDirty()
+        WeaponService.FlushDirty()
+    end
+end)
+
+game:BindToClose(function()
+    for _, player in ipairs(Players:GetPlayers()) do
+        WeaponService.StashOwnedBy(player.UserId)
+        PlayerDataService.SaveUserId(player.UserId, true)
+    end
+    WeaponService.FlushDirty()
+end)
