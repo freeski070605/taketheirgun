@@ -96,9 +96,14 @@ local function onPlayer(player)
         local founder = WeaponService.Create(player, weaponType, true)
         PlayerDataService.AddOwnedGun(player.UserId, founder.GunId)
         PlayerDataService.MarkFounderReceived(player.UserId, founder.GunId)
-        PlayerDataService.SaveUserId(player.UserId, true)
+
         if PlayerDataService.IsPersistenceAvailable(player.UserId) then
-            WeaponService.SaveNow(founder)
+            local weaponSaved = WeaponService.SaveNow(founder)
+            if weaponSaved then
+                PlayerDataService.SaveUserId(player.UserId, true)
+            else
+                warn("[TTG Persistence] Founder gun could not be saved; player profile was not committed.", founder.GunId)
+            end
         end
     end
 
