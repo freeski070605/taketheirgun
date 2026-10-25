@@ -15,6 +15,25 @@ function DropService.Init(dropFolder, remoteFolder)
     remotes = remoteFolder
 end
 
+local function scheduleExpiry(record, part)
+    local function expire()
+        if record.Claiming then
+            task.delay(1, expire)
+            return
+        end
+        if drops[record.GunId] ~= part or record.Instance ~= part or part.Parent ~= folder then return end
+
+        drops[record.GunId] = nil
+        if record.Persistent then
+            WeaponService.Stash(record)
+            WeaponService.SaveNow(record)
+        else
+            WeaponService.Discard(record)
+        end
+    end
+    task.delay(Constants.DropLifetime, expire)
+end
+
 function DropService.Create(record, position)
     if not record or record.HolderUserId or record.Instance then return nil end
 
@@ -48,18 +67,7 @@ function DropService.Create(record, position)
         DropService.Claim(player, part)
     end)
 
-    task.delay(Constants.DropLifetime, function()
-        if record.Claiming then return end
-        if drops[record.GunId] ~= part or record.Instance ~= part or part.Parent ~= folder then return end
-        drops[record.GunId] = nil
-        if record.Persistent then
-            WeaponService.Stash(record)
-            WeaponService.SaveNow(record)
-        else
-            WeaponService.Discard(record)
-        end
-    end)
-
+    scheduleExpiry(record, part)
     return part
 end
 
@@ -96,8 +104,8 @@ function DropService.Claim(player, part)
         record.Claiming = true
     end
 
-    -- From here to equip there are no yields. The Claiming flag also prevents a
-    -- second prompt callback from racing a persistent profile write above.
+    -- From here to equip there are no yields. Claiming also prevents another
+    -- prompt callback from racing the persistent profile write above.
     drops[gunId] = nil
     record.Instance = nil
     part:Destroy()
@@ -124,8 +132,12 @@ function DropService.Claim(player, part)
     WeaponService.Update(record)
 
     if record.Persistent and eventType then
-        local weaponSaved = WeaponService.SaveNow(record)
-        if weaponSaved or not PlayerDataService.IsPersistenceAvailable(player.UserId) then
+        local weaponSaved = true
+        if PlayerDataService.IsPersistenceAvailable(player.UserId) then
+            weaponSaved = WeaponService.SaveNow(record)
+        end
+
+        if weaponSaved then
             if transferPreviousOwner then
                 PlayerDataService.RemoveOwnedGun(transferPreviousOwner, gunId)
                 PlayerDataService.SaveUserId(transferPreviousOwner, true)
@@ -155,6 +167,22 @@ end
 function DropService.DropPlayerWeapon(player, position)
     local record = WeaponService.TakeFromPlayer(player)
     if record then DropService.Create(record, position) end
+end
+
+function DropService.StashOwnedDrops(userId)
+    local toStash = {}
+    for gunId, part in pairs(drops) do
+        local record = WeaponService.Get(gunId)
+        if record and record.Persistent and record.CurrentOwnerUserId == userId and not record.Claiming then
+            table.insert(toStash, { record = record, part = part })
+        end
+    end
+
+    for _, item in ipairs(toStash) do
+        drops[item.record.GunId] = nil
+        WeaponService.Stash(item.record)
+        WeaponService.SaveNow(item.record)
+    end
 end
 
 return DropService
