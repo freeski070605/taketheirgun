@@ -55,6 +55,9 @@ local function giveSpawnWeapon(player)
 end
 
 local function onCharacter(player, character)
+    if character:GetAttribute("TTGServerBound") then return end
+    character:SetAttribute("TTGServerBound", true)
+
     task.spawn(function()
         if not PlayerDataService.WaitLoaded(player, 15) then return end
         if player.Character ~= character then return end
@@ -94,7 +97,9 @@ local function onPlayer(player)
         PlayerDataService.AddOwnedGun(player.UserId, founder.GunId)
         PlayerDataService.MarkFounderReceived(player.UserId, founder.GunId)
         PlayerDataService.SaveUserId(player.UserId, true)
-        WeaponService.SaveNow(founder)
+        if PlayerDataService.IsPersistenceAvailable(player.UserId) then
+            WeaponService.SaveNow(founder)
+        end
     end
 
     if player.Character then onCharacter(player, player.Character) end
@@ -106,6 +111,7 @@ for _, player in ipairs(Players:GetPlayers()) do
 end
 
 Players.PlayerRemoving:Connect(function(player)
+    DropService.StashOwnedDrops(player.UserId)
     WeaponService.StashOwnedBy(player.UserId)
     PlayerDataService.Forget(player)
 end)
@@ -134,6 +140,7 @@ end)
 
 game:BindToClose(function()
     for _, player in ipairs(Players:GetPlayers()) do
+        DropService.StashOwnedDrops(player.UserId)
         WeaponService.StashOwnedBy(player.UserId)
         PlayerDataService.SaveUserId(player.UserId, true)
     end
