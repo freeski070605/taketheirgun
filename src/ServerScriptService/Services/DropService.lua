@@ -147,17 +147,20 @@ function DropService.Claim(player, part)
     WeaponService.Update(record)
 
     if record.Persistent and eventType then
-        local weaponSaved = true
-        if PlayerDataService.IsPersistenceAvailable(player.UserId) then
+        local persistenceAvailable = PlayerDataService.IsPersistenceAvailable(player.UserId)
+        local weaponSaved = false
+        if persistenceAvailable then
             weaponSaved = WeaponService.SaveNow(record)
         end
 
-        if weaponSaved then
-            if transferPreviousOwner then
-                PlayerDataService.RemoveOwnedGun(transferPreviousOwner, gunId)
+        if transferPreviousOwner then
+            PlayerDataService.RemoveOwnedGun(transferPreviousOwner, gunId)
+            if persistenceAvailable and weaponSaved then
                 PlayerDataService.SaveUserId(transferPreviousOwner, true)
             end
-        else
+        end
+
+        if persistenceAvailable and not weaponSaved then
             warn("Persistent ownership changed in-session but could not be saved for", gunId)
         end
     end
